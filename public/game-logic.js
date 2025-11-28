@@ -25,68 +25,224 @@ const State = {
     cameraOffset: { x: -300, y: 300, z: -300 },
     cameraZoom: 1.0,
     unlockedChars: ['chicken'],
-    selectedChar: 'chicken'
+    selectedChar: 'chicken',
+    dataLoaded: false,
+    isLoadingData: false
 };
 
-// Enhanced Local Storage with backup and validation
-const STORAGE_KEY = 'voxelRoadData_v3';
+// MongoDB + Wallet Integration
+// Data is now stored in MongoDB, keyed by wallet address
 
-function loadData() {
+/**
+ * Load user data from MongoDB via API
+ * NO LOCALSTORAGE - wallet required for save/load
+ */
+async function loadData(walletAddress) {
+    if (!walletAddress) {
+        console.log('⚠️ No wallet connected - Guest Mode');
+        console.log('⚠️ Your progress will NOT be saved');
+        State.dataLoaded = true; // Allow guest play
+        State.isLoadingData = false;
+        return;
+    }
+
     try {
-        const savedData = localStorage.getItem(STORAGE_KEY);
-        if (savedData) {
-            const parsed = JSON.parse(savedData);
-            State.coins = Math.max(0, parsed.coins || 0);
-            State.highScore = Math.max(0, parsed.highScore || 0);
-            State.unlockedChars = Array.isArray(parsed.unlockedChars) ? parsed.unlockedChars : ['chicken'];
-            State.selectedChar = parsed.selectedChar || 'chicken';
+        State.isLoadingData = true;
+        console.log('🔄 Loading user data from MongoDB...');
+        
+        const response = await fetch('/api/user/load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ walletAddress })
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            
+            // Only update if values exist (don't reset to 0)
+            if (data.coins !== undefined) State.coins = Math.max(0, data.coins);
+            if (data.highScore !== undefined) State.highScore = Math.max(0, data.highScore);
+            if (Array.isArray(data.unlockedChars) && data.unlockedChars.length > 0) {
+                State.unlockedChars = data.unlockedChars;
+            }
+            if (data.selectedChar) State.selectedChar = data.selectedChar;
             
             // Validate selected char is unlocked
             if (!State.unlockedChars.includes(State.selectedChar)) {
                 State.selectedChar = 'chicken';
             }
             
-            console.log('Data loaded successfully:', {
+            console.log('✅ Data loaded from MongoDB:', {
+                wallet: `${walletAddress.slice(0, 8)}...`,
                 coins: State.coins,
                 highScore: State.highScore,
                 unlockedCount: State.unlockedChars.length
             });
+            
+            State.dataLoaded = true;
+            State.isLoadingData = false;
+            updateHUD();
+        } else {
+            console.error('❌ Failed to load data:', response.status);
+            State.dataLoaded = true;
+            State.isLoadingData = false;
         }
     } catch (e) {
-        console.error('Failed to load save data:', e);
-        // Reset to defaults on error
-        State.coins = 0;
-        State.highScore = 0;
-        State.unlockedChars = ['chicken'];
-        State.selectedChar = 'chicken';
+        console.error('❌ Failed to load data:', e);
+        State.dataLoaded = true;
+        State.isLoadingData = false;
     }
 }
 
-function saveData() {
+/**
+ * Save user data to MongoDB via API
+ * NO LOCALSTORAGE - wallet required for persistence
+ * Debounced to prevent excessive saves
+ */
+let saveTimeout = null;
+let lastSaveTime = 0;
+const MIN_SAVE_INTERVAL = 5000; // Minimum 5 seconds between saves
+
+async function saveData(walletAddress, immediate = false) {
+    if (!walletAddress || !State.dataLoaded) {
+        return;
+    }
+
+    // Debounce saves unless immediate
+    if (!immediate) {
+        const now = Date.now();
+        if (now - lastSaveTime < MIN_SAVE_INTERVAL) {
+            // Clear existing timeout and schedule new one
+            if (saveTimeout) clearTimeout(saveTimeout);
+            
+            saveTimeout = setTimeout(() => {
+                saveData(walletAddress, true);
+            }, MIN_SAVE_INTERVAL - (now - lastSaveTime));
+            return;
+        }
+    }
+
     try {
-        const dataToSave = {
-            coins: State.coins,
-            highScore: State.highScore,
-            unlockedChars: State.unlockedChars,
-            selectedChar: State.selectedChar,
-            lastSaved: new Date().toISOString()
-        };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
-        console.log('Data saved successfully');
+        lastSaveTime = Date.now();
+        
+        const response = await fetch('/api/user/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                walletAddress,
+                coins: State.coins,
+                highScore: State.highScore,
+                unlockedChars: State.unlockedChars,
+                selectedChar: State.selectedChar
+            })
+        });
+
+        if (response.ok) {
+            console.log('💾 Data saved to MongoDB');
+        } else {
+            console.error('❌ Failed to save data:', response.status);
+        }
     } catch (e) {
-        console.error('Failed to save data:', e);
+        console.error('❌ Failed to save data:', e);
     }
 }
 
-// Auto-save every 30 seconds
+/**
+ * Request SOL payout for prize winnings
+ */
+async function requestSolPayout(walletAddress, amount, type) {
+    if (!walletAddress) {
+        console.log('⚠️ Cannot send SOL - no wallet connected');
+        return false;
+    }
+
+    try {
+        const response = await fetch('/api/payout/request', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ walletAddress, amount, type })
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+            console.log(`💰 SOL Payout requested: ${amount} SOL`);
+            console.log(`   ${result.message}`);
+            return true;
+        }
+    } catch (e) {
+        console.error('❌ Failed to request payout:', e);
+    }
+    return false;
+}
+
+// Get wallet address from parent window (Next.js page)
+let currentWalletAddress = null;
+
+function updateGuestModeWarning() {
+    const warning = document.getElementById('guest-mode-warning');
+    if (warning) {
+        if (currentWalletAddress) {
+            warning.style.display = 'none';
+        } else {
+            warning.style.display = 'block';
+        }
+    }
+}
+
+window.addEventListener('message', (event) => {
+    if (event.data.type === 'WALLET_UPDATE') {
+        const { walletAddress, connected } = event.data;
+        
+        if (connected && walletAddress) {
+            // Check if this is a NEW connection (not just a re-render)
+            const isNewConnection = walletAddress !== currentWalletAddress;
+            
+            if (isNewConnection) {
+                console.log('🔗 Wallet connected:', `${walletAddress.slice(0, 8)}...`);
+                currentWalletAddress = walletAddress;
+                State.dataLoaded = false;
+                State.isLoadingData = true;
+                updateGuestModeWarning();
+                
+                // CRITICAL: Load data from DB first before any saves can happen
+                loadData(walletAddress).then(() => {
+                    console.log('✅ User data loaded - ready for gameplay and auto-save');
+                });
+            }
+        } else if (!connected && currentWalletAddress) {
+            console.log('🔌 Wallet disconnected - entering guest mode');
+            console.log('⚠️ Progress will NOT be saved');
+            
+            // Save final state before disconnecting
+            if (State.dataLoaded) {
+                saveData(currentWalletAddress, true); // immediate = true
+            }
+            
+            currentWalletAddress = null;
+            State.dataLoaded = false;
+            updateGuestModeWarning();
+            
+            // Reset to defaults for guest mode
+            State.coins = 0;
+            State.highScore = 0;
+            State.unlockedChars = ['chicken'];
+            State.selectedChar = 'chicken';
+            updateHUD();
+        }
+    }
+});
+
+// Show guest warning on initial load
+setTimeout(() => {
+    updateGuestModeWarning();
+}, 1000);
+
+// Auto-save every 30 seconds (if wallet connected AND data has been loaded)
 setInterval(() => {
-    if (State.isPlaying || State.inPrizeMachine) {
-        saveData();
+    if ((State.isPlaying || State.inPrizeMachine) && currentWalletAddress && State.dataLoaded) {
+        saveData(currentWalletAddress);
     }
 }, 30000);
-
-// Load data on startup
-loadData();
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87CEEB);
@@ -267,8 +423,18 @@ const CharacterDefinitions = {
     'rainbow_star': { name: "Rainbow Star", rarity: "mythic", build: () => { const g=new THREE.Group(); g.add(createBox(Materials.yellow,30,30,10,0,25,0)); g.add(createBox(Materials.red,10,10,10,0,45,0)); g.add(createBox(Materials.blue,10,10,10,20,25,0)); g.add(createBox(Materials.green,10,10,10,-20,25,0)); return g; } }
 };
 
-// PREVIEW SYSTEM
+// PREVIEW SYSTEM - Only generate once to prevent WebGL context leak
+let previewsGenerated = false;
+
 function generateCharacterPreviews() {
+    if (previewsGenerated) {
+        console.log('⚠️ Character previews already generated, skipping');
+        return;
+    }
+    
+    previewsGenerated = true;
+    console.log('🎨 Generating character previews...');
+    
     const previewRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
     previewRenderer.setSize(256, 256);
     previewRenderer.setClearColor(0x000000, 0);
@@ -310,7 +476,9 @@ function generateCharacterPreviews() {
         if (index < keys.length) {
             requestAnimationFrame(processBatch);
         } else {
+            // Properly dispose of renderer when done
             previewRenderer.dispose();
+            console.log('✅ Character previews generated');
         }
     }
     
@@ -766,7 +934,8 @@ function checkEndConditions() {
             lane.mesh.remove(coin.mesh);
             State.coins += coin.value; 
             updateHUD();
-            saveData();
+            // Don't save on every coin - auto-save handles it
+            // if (currentWalletAddress && State.dataLoaded) saveData(currentWalletAddress);
         }
     }
     
@@ -794,7 +963,10 @@ function die(reason) {
     
     if (State.score > State.highScore) {
         State.highScore = State.score;
-        saveData();
+        // Save high score immediately (important milestone)
+        if (currentWalletAddress && State.dataLoaded) {
+            saveData(currentWalletAddress, true); // immediate = true
+        }
         document.getElementById('new-best-badge').style.display = 'block';
     } else {
         document.getElementById('new-best-badge').style.display = 'none';
@@ -901,7 +1073,9 @@ function showCharSelect() {
         if (isUnlocked) {
             card.onclick = () => {
                 State.selectedChar = key;
-                saveData();
+                if (currentWalletAddress && State.dataLoaded) {
+                    saveData(currentWalletAddress); // debounced, no immediate flag needed
+                }
                 showCharSelect(); 
             };
         }
@@ -920,6 +1094,25 @@ function showPrizeMachine() {
     document.getElementById('unlock-msg').innerText = "";
     document.getElementById('buy-btn').disabled = false;
     document.getElementById('hud-top').style.opacity = '0';
+    
+    // Set up mobile toggle for drop rates panel
+    const toggleBtn = document.getElementById('toggle-rates');
+    const panel = document.getElementById('drop-rate-panel');
+    
+    if (toggleBtn && panel) {
+        // Start with panel hidden on mobile
+        if (window.innerWidth <= 768) {
+            panel.classList.add('panel-hidden');
+        }
+        
+        toggleBtn.onclick = () => {
+            panel.classList.toggle('panel-hidden');
+            const icon = document.getElementById('toggle-icon');
+            if (icon) {
+                icon.innerText = panel.classList.contains('panel-hidden') ? '📊' : '✕';
+            }
+        };
+    }
     
     if(PrizeScene.crate) PrizeScene.group.remove(PrizeScene.crate);
     if(PrizeScene.rewardMesh) PrizeScene.group.remove(PrizeScene.rewardMesh);
@@ -947,6 +1140,15 @@ function closePrizeMachine() {
     State.inPrizeMachine = false;
     document.getElementById('prize-machine-screen').classList.add('hidden');
     document.getElementById('hud-top').style.opacity = '1';
+    
+    // Reset panel state for next time
+    const panel = document.getElementById('drop-rate-panel');
+    const icon = document.getElementById('toggle-icon');
+    if (panel && window.innerWidth <= 768) {
+        panel.classList.add('panel-hidden');
+        if (icon) icon.innerText = '📊';
+    }
+    
     showStartScreen();
     
     PrizeBackgroundSystem.stop();
@@ -984,7 +1186,9 @@ function tryUnlock() {
     
     State.coins -= PRIZE_COST;
     updateHUD();
-    saveData();
+    if (currentWalletAddress && State.dataLoaded) {
+        saveData(currentWalletAddress, true); // immediate = true (spending coins)
+    }
     
     btn.disabled = true;
     msg.innerText = "";
@@ -998,51 +1202,137 @@ function tryUnlock() {
             PrizeScene.group.remove(PrizeScene.crate);
             PrizeScene.crate = null;
             
+            // First, determine if this is a LOOT drop or a CHARACTER drop
             const r = Math.random() * 100;
-            let targetRarity = 'common';
-            if (r > 95) targetRarity = 'mythic'; 
-            else if (r > 85) targetRarity = 'legendary'; 
-            else if (r > 60) targetRarity = 'rare'; 
+            let isLootDrop = false;
+            let lootMesh = null;
+            let lootValue = 0;
+            let solPrize = null;
             
-            const available = Object.keys(CharacterDefinitions).filter(k => CharacterDefinitions[k].rarity === targetRarity);
-            const randKey = available[Math.floor(Math.random() * available.length)];
+            // LOOT DROP RATES (independent of characters - these are NOT playable)
+            // Characters = ~55%, Loot = ~45% (gold piles + SOL gems)
+            if (r > 99.99) { // 0.01% - LARGE SOL (COSMIC)
+                isLootDrop = true;
+                solPrize = 0.25; // LARGE: 0.25 SOL
+                lootMesh = createSolanaGem(40); // Huge gem
+                lootValue = 0;
+            } else if (r > 99.5) { // ~0.5% - MEDIUM SOL
+                isLootDrop = true;
+                solPrize = 0.1; // MEDIUM: 0.1 SOL
+                lootMesh = createSolanaGem(28); // Medium gem
+                lootValue = 0;
+            } else if (r > 95.0) { // ~4.5% - SMALL SOL
+                isLootDrop = true;
+                solPrize = 0.025; // SMALL: 0.025 SOL
+                lootMesh = createSolanaGem(18); // Small gem
+                lootValue = 0;
+            } else if (r > 85.0) { // ~10% - LARGE GOLD PILE
+                isLootDrop = true;
+                lootMesh = new THREE.Group();
+                lootMesh.add(createBox(Materials.gold, 25, 25, 25, 0, 12.5, 0));
+                lootMesh.add(createBox(Materials.gold, 20, 20, 20, 0, 30, 0));
+                lootValue = 150; // Large gold pile
+            } else if (r > 55.0) { // ~30% - SMALL GOLD PILE
+                isLootDrop = true;
+                lootMesh = createBox(Materials.gold, 22, 22, 22, 0, 18, 0);
+                lootValue = 50; // Small gold pile
+            }
+            // Remaining ~55% are character drops
             
-            let isNew = !State.unlockedChars.includes(randKey);
-            
-            const charGroup = CharacterDefinitions[randKey].build();
-            PrizeScene.rewardMesh = charGroup;
-            charGroup.position.set(0, -20, 0);
-            charGroup.scale.set(0.1, 0.1, 0.1);
-            PrizeScene.group.add(charGroup);
-            
-            new TWEEN.Tween(charGroup.position).to({ y: 30 }, 1000).easing(TWEEN.Easing.Elastic.Out).start();
-            new TWEEN.Tween(charGroup.scale).to({ x: 2, y: 2, z: 2 }, 1000).easing(TWEEN.Easing.Elastic.Out).start();
-            new TWEEN.Tween(charGroup.rotation).to({ y: Math.PI * 4 - Math.PI * 0.75 }, 2000).easing(TWEEN.Easing.Cubic.Out).start();
-            
-            setTimeout(() => {
-                const charName = CharacterDefinitions[randKey].name;
-                const charRarity = CharacterDefinitions[randKey].rarity.toUpperCase();
+            if (isLootDrop) {
+                // LOOT DROP - Gold or SOL
+                PrizeScene.rewardMesh = lootMesh;
+                lootMesh.position.set(0, -20, 0);
+                lootMesh.scale.set(0.1, 0.1, 0.1);
+                PrizeScene.group.add(lootMesh);
                 
-                if (isNew) {
-                    State.unlockedChars.push(randKey);
-                    State.selectedChar = randKey; 
-                    msg.innerHTML = `NEW! Unlocked <span style="color:yellow">${charName}</span><br><span style="font-size:16px">(${charRarity})</span>`;
-                    msg.style.color = "#00FF00";
-                    generateCharacterPreviews(); 
-                } else {
-                    State.coins += 20; // Refund
-                    msg.innerHTML = `Duplicate: ${charName}<br>+20 Coins`;
-                    msg.style.color = "#FFFF00";
-                }
-                saveData();
-                updateHUD();
-                btn.disabled = false;
-            }, 500);
+                new TWEEN.Tween(lootMesh.position).to({ y: 30 }, 1000).easing(TWEEN.Easing.Elastic.Out).start();
+                new TWEEN.Tween(lootMesh.scale).to({ x: 2, y: 2, z: 2 }, 1000).easing(TWEEN.Easing.Elastic.Out).start();
+                new TWEEN.Tween(lootMesh.rotation).to({ y: Math.PI * 4 }, 2000).easing(TWEEN.Easing.Cubic.Out).start();
+                
+                setTimeout(async () => {
+                    if (solPrize && currentWalletAddress) {
+                        // SOL GEM WIN
+                        const prizeType = solPrize >= 0.25 ? 'LARGE' : solPrize >= 0.1 ? 'MEDIUM' : 'SMALL';
+                        const prizeLabel = solPrize >= 0.25 ? '💎 COSMIC JACKPOT! 💎' : '💎 SOLANA GEM! 💎';
+                        msg.innerHTML = `${prizeLabel}<br><span style="color:#14F195; font-size:56px">${solPrize} SOL</span><br><span style="font-size:18px">(${prizeType} GEM)</span>`;
+                        msg.style.color = "#14F195";
+                        
+                        const payoutSuccess = await requestSolPayout(currentWalletAddress, solPrize, prizeType);
+                        if (payoutSuccess) {
+                            console.log(`💰 ${solPrize} SOL payout requested for ${currentWalletAddress}`);
+                        }
+                    } else if (lootValue > 0) {
+                        // GOLD PILE WIN
+                        State.coins += lootValue;
+                        const pileName = lootValue >= 150 ? 'HUGE' : 'LARGE';
+                        msg.innerHTML = `💰 GOLD! 💰<br><span style="color:#FFD700; font-size:48px">+${lootValue}</span><br><span style="font-size:16px">${pileName} GOLD PILE</span>`;
+                        msg.style.color = "#FFD700";
+                    }
+                    
+                    if (currentWalletAddress && State.dataLoaded) {
+                        saveData(currentWalletAddress, true);
+                    }
+                    updateHUD();
+                    btn.disabled = false;
+                }, 500);
+            } else {
+                // CHARACTER DROP
+                let charRarity = 'common';
+                const charRoll = Math.random() * 100;
+                if (charRoll > 95) charRarity = 'mythic';
+                else if (charRoll > 85) charRarity = 'legendary';
+                else if (charRoll > 60) charRarity = 'rare';
+                
+                const available = Object.keys(CharacterDefinitions).filter(k => CharacterDefinitions[k].rarity === charRarity);
+                const randKey = available[Math.floor(Math.random() * available.length)];
+                const isNew = !State.unlockedChars.includes(randKey);
+                
+                const charGroup = CharacterDefinitions[randKey].build();
+                PrizeScene.rewardMesh = charGroup;
+                charGroup.position.set(0, -20, 0);
+                charGroup.scale.set(0.1, 0.1, 0.1);
+                PrizeScene.group.add(charGroup);
+                
+                new TWEEN.Tween(charGroup.position).to({ y: 30 }, 1000).easing(TWEEN.Easing.Elastic.Out).start();
+                new TWEEN.Tween(charGroup.scale).to({ x: 2, y: 2, z: 2 }, 1000).easing(TWEEN.Easing.Elastic.Out).start();
+                new TWEEN.Tween(charGroup.rotation).to({ y: Math.PI * 4 - Math.PI * 0.75 }, 2000).easing(TWEEN.Easing.Cubic.Out).start();
+                
+                setTimeout(async () => {
+                    const charName = CharacterDefinitions[randKey].name;
+                    const charRarityUpper = CharacterDefinitions[randKey].rarity.toUpperCase();
+                    
+                    if (isNew) {
+                        State.unlockedChars.push(randKey);
+                        State.selectedChar = randKey;
+                        msg.innerHTML = `NEW! Unlocked <span style="color:yellow">${charName}</span><br><span style="font-size:16px">(${charRarityUpper})</span>`;
+                        msg.style.color = "#00FF00";
+                    } else {
+                        State.coins += 20; // Refund for duplicate
+                        msg.innerHTML = `Duplicate: ${charName}<br>+20 Coins`;
+                        msg.style.color = "#FFFF00";
+                    }
+                    
+                    if (currentWalletAddress && State.dataLoaded) {
+                        saveData(currentWalletAddress, true);
+                    }
+                    updateHUD();
+                    btn.disabled = false;
+                }, 500);
+            }
         })
         .start();
 }
 
 function startGame() {
+    // Ensure data is loaded before starting (if wallet connected)
+    if (currentWalletAddress && State.isLoadingData) {
+        console.log('⏳ Waiting for data to load...');
+        // Wait a bit and try again
+        setTimeout(startGame, 100);
+        return;
+    }
+    
     State.isPlaying = true;
     document.getElementById('start-screen').classList.add('hidden');
     initGame();
@@ -1200,9 +1490,11 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// Save before unload
+// Save before unload (only if data has been loaded)
 window.addEventListener('beforeunload', () => {
-    saveData();
+    if (currentWalletAddress && State.dataLoaded) {
+        saveData(currentWalletAddress, true); // immediate = true
+    }
 });
 
 // Initialize

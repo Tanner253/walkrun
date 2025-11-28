@@ -8,12 +8,15 @@ A Crossy Road-style 3D voxel game built with Three.js and Next.js, featuring 100
 - 🐔 **100+ Unique Characters** - Collect Common, Rare, Legendary, and Mythic characters
 - 🎰 **Prize Machine** - Gacha system to unlock new characters
 - 🪙 **Coin System** - Earn coins by progressing and collecting loot
-- 💾 **Enhanced Local Storage** - Automatic save system with data validation and backup
+- 💎 **Solana Wallet Integration** - Connect Phantom or Solflare wallet (optional)
+- 🗄️ **MongoDB Backend** - Persistent cloud-based save system
+- 💰 **Real SOL Prizes** - Win 0.5 SOL for cosmic character unlocks
 - 📱 **Mobile & Touch Controls** - Fully responsive with swipe and pinch-to-zoom
 - 🎨 **Voxel Art Style** - Colorful 3D blocky graphics
 - 🚗 **Multiple Lane Types** - Avoid cars, ride logs, dodge trains
 - 🏆 **High Score Tracking** - Beat your personal best
 - 🎭 **Character Preview System** - See your collection in the character selector
+- 👻 **Guest Mode** - Play without wallet connection (progress not saved)
 
 ## Tech Stack
 
@@ -28,26 +31,55 @@ A Crossy Road-style 3D voxel game built with Three.js and Next.js, featuring 100
 
 - Node.js 18+ installed
 - npm or yarn
+- MongoDB Atlas account (free tier works)
+- Solana wallet (Phantom or Solflare) for playing with save features
 
-### Installation
+### Quick Start
 
-1. Clone the repository:
+1. **Clone the repository:**
 ```bash
 git clone <your-repo-url>
 cd walkrun
 ```
 
-2. Install dependencies:
+2. **Install dependencies:**
 ```bash
 npm install
 ```
 
-3. Run the development server:
+3. **Set up MongoDB:**
+   - Create account at [mongodb.com/atlas](https://mongodb.com/atlas)
+   - Create a cluster (free M0 tier works)
+   - Get connection string
+
+4. **Configure environment:**
+   
+Create `.env.local` in project root:
+```env
+MONGODB_URI=mongodb+srv://USER:PASS@cluster.mongodb.net/voxelroad?retryWrites=true&w=majority
+NEXT_PUBLIC_SOLANA_RPC=https://api.mainnet-beta.solana.com
+```
+
+See `MONGODB_ENV_TEMPLATE.md` for detailed setup.
+
+5. **Run the development server:**
 ```bash
 npm run dev
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser
+6. **Open the game:**
+   
+Visit [http://localhost:3000](http://localhost:3000)
+
+7. **Connect your wallet (optional):**
+   - Click "Connect Wallet" button (top-right)
+   - Select Phantom or Solflare
+   - Approve connection
+   - Your progress will now save to MongoDB!
+
+### Guest Mode (No Wallet)
+
+You can play immediately without connecting a wallet, but your progress won't be saved and you can't win SOL prizes.
 
 ## Deployment to Vercel
 
