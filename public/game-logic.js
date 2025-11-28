@@ -1251,22 +1251,36 @@ function tryUnlock() {
                 new TWEEN.Tween(lootMesh.rotation).to({ y: Math.PI * 4 }, 2000).easing(TWEEN.Easing.Cubic.Out).start();
                 
                 setTimeout(async () => {
-                    if (solPrize && currentWalletAddress) {
+                    if (solPrize) {
                         // SOL GEM WIN
                         const prizeType = solPrize >= 0.25 ? 'LARGE' : solPrize >= 0.1 ? 'MEDIUM' : 'SMALL';
                         const prizeLabel = solPrize >= 0.25 ? '💎 COSMIC JACKPOT! 💎' : '💎 SOLANA GEM! 💎';
-                        msg.innerHTML = `${prizeLabel}<br><span style="color:#14F195; font-size:56px">${solPrize} SOL</span><br><span style="font-size:18px">(${prizeType} GEM)</span>`;
-                        msg.style.color = "#14F195";
                         
-                        const payoutSuccess = await requestSolPayout(currentWalletAddress, solPrize, prizeType);
-                        if (payoutSuccess) {
-                            console.log(`💰 ${solPrize} SOL payout requested for ${currentWalletAddress}`);
+                        console.log(`🎰 Won ${solPrize} SOL gem! Wallet connected: ${!!currentWalletAddress}`);
+                        
+                        if (currentWalletAddress) {
+                            // Wallet connected - send SOL
+                            msg.innerHTML = `${prizeLabel}<br><span style="color:#14F195; font-size:56px">${solPrize} SOL</span><br><span style="font-size:18px">(${prizeType} GEM)</span><br><span style="font-size:14px; margin-top:10px; display:block;">Sending to your wallet...</span>`;
+                            msg.style.color = "#14F195";
+                            
+                            const payoutSuccess = await requestSolPayout(currentWalletAddress, solPrize, prizeType);
+                            if (payoutSuccess) {
+                                console.log(`💰 ${solPrize} SOL payout sent to ${currentWalletAddress}`);
+                                msg.innerHTML = `${prizeLabel}<br><span style="color:#14F195; font-size:56px">${solPrize} SOL</span><br><span style="font-size:14px; margin-top:10px; display:block; color:#00FF00;">✅ Sent to your wallet!</span>`;
+                            } else {
+                                console.error(`❌ Failed to send SOL`);
+                                msg.innerHTML = `${prizeLabel}<br><span style="color:#14F195; font-size:56px">${solPrize} SOL</span><br><span style="font-size:14px; margin-top:10px; display:block; color:#FF4444;">❌ Transfer failed - contact support</span>`;
+                            }
+                        } else {
+                            // No wallet connected - show message to connect
+                            msg.innerHTML = `${prizeLabel}<br><span style="color:#14F195; font-size:56px">${solPrize} SOL</span><br><span style="font-size:16px; margin-top:10px; display:block; color:#FF9800;">⚠️ Connect wallet to claim!</span>`;
+                            msg.style.color = "#FF9800";
                         }
                     } else if (lootValue > 0) {
                         // GOLD PILE WIN
                         State.coins += lootValue;
-                        const pileName = lootValue >= 150 ? 'HUGE' : 'LARGE';
-                        msg.innerHTML = `💰 GOLD! 💰<br><span style="color:#FFD700; font-size:48px">+${lootValue}</span><br><span style="font-size:16px">${pileName} GOLD PILE</span>`;
+                        const pileName = lootValue >= 150 ? 'LARGE' : 'SMALL';
+                        msg.innerHTML = `💰 GOLD! 💰<br><span style="color:#FFD700; font-size:48px">+${lootValue}</span><br><span style="font-size:16px">${pileName} PILE</span>`;
                         msg.style.color = "#FFD700";
                     }
                     
