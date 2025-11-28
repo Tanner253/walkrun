@@ -512,34 +512,10 @@ class Lane {
 
     spawnLoot() {
         const xPos = (Math.floor(Math.random() * 8) - 4) * LANE_SIZE;
-        const r = Math.random() * 100;
         
-        let lootMesh, value;
-        
-        if (r > 99.99) { 
-            lootMesh = createSolanaGem(35);
-            value = 1000;
-        } else if (r > 99.0) { 
-            lootMesh = createSolanaGem(22);
-            value = 500;
-        } else if (r > 97.5) { 
-            lootMesh = new THREE.Group();
-            lootMesh.add(createBox(Materials.gold, 25, 25, 25, 0, 12.5, 0));
-            lootMesh.add(createBox(Materials.gold, 20, 20, 20, 0, 30, 0));
-            value = 100;
-        } else if (r > 94.0) { 
-            lootMesh = createSolanaGem(14);
-            value = 150;
-        } else if (r > 85.0) { 
-            lootMesh = createBox(Materials.gold, 20, 20, 20, 0, 15, 0);
-            value = 50;
-        } else if (r > 55.0) { 
-            lootMesh = createBox(Materials.yellow, 15, 15, 15, 0, 15, 0);
-            value = 10;
-        } else { 
-            lootMesh = createBox(Materials.yellow, 10, 10, 2, 0, 15, 0);
-            value = 1;
-        }
+        // Only spawn flat gold coins worth 1 gold - no other pickups
+        const lootMesh = createBox(Materials.yellow, 10, 10, 2, 0, 15, 0);
+        const value = 1;
         
         lootMesh.position.x = xPos;
         new TWEEN.Tween(lootMesh.rotation).to({ y: Math.PI * 2 }, 1000).repeat(Infinity).start();
