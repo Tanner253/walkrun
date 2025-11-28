@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Voxel Road - Memecoin Edition</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #87CEEB; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; -webkit-user-select: none; }
+        #game-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        
+        /* UI Overlay */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; }
+        
+        /* HUD */
+        #hud-top { position: absolute; top: 20px; left: 0; width: 100%; display: flex; justify-content: space-between; padding: 0 20px; box-sizing: border-box; pointer-events: none; }
+        #score-container { text-align: left; }
+        #score-display { font-size: 60px; color: white; text-shadow: 3px 3px 0 #000; font-weight: 900; line-height: 1; transition: opacity 0.3s; }
+        #high-score-display { font-size: 20px; color: rgba(255,255,255,0.8); font-weight: bold; text-shadow: 1px 1px 0 #000; margin-top: 5px; }
+        
+        #coin-display { font-size: 28px; color: #FFD700; text-shadow: 2px 2px 0 #000; font-weight: bold; background: rgba(0,0,0,0.6); padding: 8px 20px; border-radius: 30px; display: flex; align-items: center; gap: 8px; height: fit-content; border: 2px solid #B8860B; }
+        
+        /* Menus */
+        .menu-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; backdrop-filter: blur(5px); transition: opacity 0.3s; z-index: 10; }
+        .hidden { opacity: 0; pointer-events: none !important; }
+        
+        /* Specific Menu Overrides */
+        #prize-machine-screen { background: rgba(0,0,0,0.1); backdrop-filter: none; justify-content: flex-start; padding-top: 60px; }
+        h1 { font-size: 60px; color: white; text-transform: uppercase; text-shadow: 4px 4px 0 #333; margin: 0 0 10px 0; letter-spacing: 2px; text-align: center; }
+        h2 { color: #FFD700; margin-bottom: 30px; text-shadow: 2px 2px 0 #000; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
+        
+        button { background: #56CCF2; background: linear-gradient(to bottom, #56CCF2, #2F80ED); border: none; border-radius: 12px; padding: 15px 40px; color: white; font-size: 24px; font-weight: bold; cursor: pointer; box-shadow: 0 6px 0 #1b5e96; margin: 10px; transition: transform 0.1s, box-shadow 0.1s; outline: none; text-transform: uppercase; position: relative; }
+        button:active { transform: translateY(4px); box-shadow: 0 2px 0 #1b5e96; }
+        button:disabled { filter: grayscale(1); cursor: not-allowed; transform: none; box-shadow: none; opacity: 0.7; }
+        
+        button.secondary { background: #F2994A; background: linear-gradient(to bottom, #F2994A, #F2C94C); box-shadow: 0 6px 0 #d35400; font-size: 18px; padding: 12px 30px; }
+        button.secondary:active { box-shadow: 0 2px 0 #d35400; }
+        
+        /* Solana Badge */
+        #solana-badge {
+            position: absolute;
+            top: -15px;
+            right: -20px;
+            background: linear-gradient(45deg, #9945FF, #14F195);
+            color: white;
+            font-size: 12px;
+            font-weight: 900;
+            padding: 5px 10px;
+            border-radius: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            border: 2px solid white;
+            animation: badgePulse 1.5s infinite ease-in-out;
+            pointer-events: none;
+            z-index: 20;
+            white-space: nowrap;
+        }
+        @keyframes badgePulse { 
+            0% { transform: scale(1) rotate(5deg); } 
+            50% { transform: scale(1.15) rotate(-5deg); } 
+            100% { transform: scale(1) rotate(5deg); } 
+        }
+        /* Drop Rate Info Panel */
+        #drop-rate-panel {
+            position: absolute;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 250px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 15px;
+            padding: 20px;
+            color: white;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            text-align: left;
+        }
+        #drop-rate-panel h3 { color: #FFD700; margin: 0 0 15px 0; text-transform: uppercase; border-bottom: 1px solid rgba(255,255,255,0.3); padding-bottom: 5px; }
+        .rate-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
+        .rate-val { font-weight: bold; }
+        .sol-payout { margin-top: 15px; padding-top: 10px; border-top: 1px dashed rgba(255,255,255,0.3); }
+        .sol-item { color: #14F195; font-weight: bold; margin-bottom: 5px; }
+        
+        /* Character Selector */
+        #char-select-screen { justify-content: flex-start; padding-top: 50px; }
+        
+        #char-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); 
+            gap: 150px 30px;
+            width: 95%;
+            max-width: 1000px; 
+            max-height: 70vh; 
+            overflow-y: auto; 
+            padding: 40px;
+            background: rgba(0,0,0,0.6); 
+            border-radius: 20px; 
+            border: 2px solid rgba(255,255,255,0.1); 
+            box-sizing: border-box;
+        }
+        
+        #char-grid::-webkit-scrollbar { width: 10px; }
+        #char-grid::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); border-radius: 5px; margin: 20px 0; }
+        #char-grid::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 5px; border: 2px solid rgba(0,0,0,0.1); }
+        
+        .char-card { 
+            background: rgba(255,255,255,0.08); 
+            border-radius: 20px;
+            padding: 15px; 
+            cursor: pointer; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: space-between;
+            border: 2px solid transparent; 
+            transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275); 
+            position: relative; 
+            overflow: visible;
+            aspect-ratio: 1 / 1.1; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+        
+        /* HOVER EFFECTS */
+        .char-card:hover { 
+            transform: scale(1.15) translateY(-5px); 
+            background: rgba(255,255,255,0.2);
+            z-index: 100;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+            border-color: rgba(255,255,255,0.5);
+        }
+        .char-card:hover .char-card-img {
+            animation: charHop 0.5s infinite alternate;
+        }
+        @keyframes charHop {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-5px); }
+        }
+        .char-card.locked { opacity: 0.5; cursor: default; filter: grayscale(1); }
+        .char-card.selected { border-color: #FFD700; background: rgba(255,215,0,0.2); transform: scale(1.05); box-shadow: 0 0 15px rgba(255,215,0,0.3); }
+        
+        /* 1:1 SQUARE IMAGE CONTAINER */
+        .char-card-img { 
+            width: 100%; 
+            aspect-ratio: 1 / 1;
+            height: auto;
+            background: transparent; 
+            border-radius: 12px; 
+            margin-bottom: 10px; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+        }
+        .char-card-img img {
+            width: 90%;
+            height: 90%;
+            object-fit: contain;
+            image-rendering: pixelated;
+            filter: drop-shadow(0 5px 5px rgba(0,0,0,0.5));
+        }
+        .char-name { color: white; font-size: 14px; font-weight: 800; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; text-shadow: 1px 1px 0 #000; margin-bottom: 2px;}
+        .char-rarity { font-size: 10px; font-weight: 800; padding: 4px 8px; border-radius: 4px; text-transform: uppercase; width: 100%; text-align: center; letter-spacing: 1px; }
+        
+        .rarity-common { background: #95a5a6; color: #fff; }
+        .rarity-rare { background: #3498db; color: white; border: 1px solid #2980b9; }
+        .rarity-legendary { background: #9b59b6; color: white; box-shadow: 0 0 10px #8e44ad; border: 1px solid #8e44ad; }
+        .rarity-mythic { background: linear-gradient(45deg, #f1c40f, #e67e22); color: #fff; border: 2px solid #fff; box-shadow: 0 0 15px #f1c40f; text-shadow: 0 1px 1px rgba(0,0,0,0.3); animation: mythicGlow 2s infinite alternate; }
+        
+        @keyframes mythicGlow { 0% { box-shadow: 0 0 5px #f1c40f; } 100% { box-shadow: 0 0 20px #f1c40f, 0 0 10px #e67e22; } }
+        #prize-ui-container { position: absolute; bottom: 50px; width: 100%; display: flex; flex-direction: column; align-items: center; }
+        #prize-cost { font-size: 28px; color: #FFD700; font-weight: 900; text-shadow: 2px 2px 0 #000; margin-bottom: 15px; background: rgba(0,0,0,0.5); padding: 5px 20px; border-radius: 20px; }
+        #unlock-msg { font-size: 36px; color: #FFF; font-weight: 900; text-shadow: 0 0 15px rgba(0,0,0,0.8); margin-top: 20px; min-height: 40px; text-align: center; width: 100%; position: absolute; top: 150px; pointer-events: none;}
+        
+        #controls-hint { position: absolute; bottom: 20px; width: 100%; text-align: center; color: rgba(255,255,255,0.7); font-size: 14px; pointer-events: none; font-weight: 500; }
+        #final-score { font-size: 80px; color: white; margin: 10px 0; text-shadow: 4px 4px 0 #000; }
+        #final-coins { font-size: 32px; color: #FFD700; margin-bottom: 30px; text-shadow: 2px 2px 0 #000; font-weight: bold; }
+        #new-best-badge { display: none; background: #FF4444; color: white; padding: 5px 15px; border-radius: 5px; font-weight: bold; font-size: 18px; animation: pulse 1s infinite; margin-top: -10px; margin-bottom: 10px;}
+        
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+</head>
+<body>
+    <div id="game-container"></div>
+    <div id="ui-layer">
+        <div id="hud-top">
+            <div id="score-container">
+                <div id="score-display">0</div>
+                <div id="high-score-display">BEST: 0</div>
+            </div>
+            <div id="coin-display"><span>🪙</span> <span id="coin-count">0</span></div>
+        </div>
+        
+        <!-- Start Screen -->
+        <div id="start-screen" class="menu-screen">
+            <h1>Voxel Road</h1>
+            <h2>Memecoin Edition</h2>
+            <button id="play-btn">PLAY</button>
+            <button id="chars-btn" class="secondary">CHARACTERS</button>
+            <button id="prize-btn" class="secondary">
+                PRIZE MACHINE
+                <div id="solana-badge">WIN SOLANA!</div>
+            </button>
+            <div id="controls-hint">Swipe or Arrow Keys to Move<br>Scroll/Pinch to Zoom</div>
+        </div>
+        <!-- Game Over Screen -->
+        <div id="game-over-screen" class="menu-screen hidden">
+            <h1>GAME OVER</h1>
+            <div id="final-score">0</div>
+            <div id="new-best-badge">NEW BEST!</div>
+            <div id="final-coins">+0 Coins</div>
+            <button id="retry-btn">PLAY AGAIN</button>
+            <button id="menu-btn" class="secondary">MENU</button>
+        </div>
+        <!-- Character Select -->
+        <div id="char-select-screen" class="menu-screen hidden">
+            <h2>Select Character</h2>
+            <div id="char-grid"></div>
+            <button id="back-from-chars" class="secondary" style="margin-top: 20px;">BACK</button>
+        </div>
+        <!-- Prize Machine -->
+        <div id="prize-machine-screen" class="menu-screen hidden">
+            <h1>Prize Machine</h1>
+            <div id="unlock-msg"></div>
+            
+            <div id="drop-rate-panel">
+                <h3>Drop Rates</h3>
+                <div class="rate-row"><span>Common</span> <span class="rate-val" style="color:#95a5a6">~55%</span></div>
+                <div class="rate-row"><span>Rare</span> <span class="rate-val" style="color:#3498db">~30%</span></div>
+                <div class="rate-row"><span>Legendary</span> <span class="rate-val" style="color:#9b59b6">~10%</span></div>
+                <div class="rate-row"><span>Mythic</span> <span class="rate-val" style="color:#f1c40f">~5%</span></div>
+                <div class="rate-row"><span>Cosmic</span> <span class="rate-val" style="color:#e429f2; text-shadow: 0 0 5px #e429f2;">0.01%</span></div>
+                
+                <div class="sol-payout">
+                    <div style="margin-bottom:8px; font-size:12px; text-transform:uppercase; opacity:0.8;">Loot Values</div>
+                    <div class="sol-item" style="color:#95a5a6">Small Gold: Common</div>
+                    <div class="sol-item" style="color:#9b59b6">Small SOL / Med Gold: Legendary</div>
+                    <div class="sol-item" style="color:#f1c40f">Med SOL / Huge Gold: Mythic</div>
+                    <div class="sol-item" style="color:#e429f2; text-shadow:0 0 5px #e429f2">Huge SOL (1.0): Cosmic</div>
+                </div>
+            </div>
+            <div id="prize-ui-container">
+                <div id="prize-cost">Cost: 100 Coins</div>
+                <button id="buy-btn">OPEN (100)</button>
+                <button id="back-from-prize" class="secondary">BACK</button>
+            </div>
+        </div>
+    </div>
+<script src="game-logic.js"></script>
+</body>
+</html>
+
