@@ -15,8 +15,8 @@ export async function POST(request) {
     }
 
     // Validate environment variables
-    if (!process.env.WALLET || !process.env.WALLET_PRIVATE_KEY) {
-      console.error('❌ WALLET or WALLET_PRIVATE_KEY not configured');
+    if (!process.env.WALLET_PRIVATE_KEY) {
+      console.error('❌ WALLET_PRIVATE_KEY not configured');
       return NextResponse.json(
         { error: 'Platform wallet not configured' },
         { status: 500 }
@@ -30,15 +30,10 @@ export async function POST(request) {
       // Initialize Solana connection
       const connection = new Connection(process.env.NEXT_PUBLIC_SOLANA_RPC || 'https://api.mainnet-beta.solana.com', 'confirmed');
       
-      // Load platform wallet from private key
+      // Load platform wallet from private key - send SOL from this wallet to winner
       const platformWallet = Keypair.fromSecretKey(bs58.decode(process.env.WALLET_PRIVATE_KEY));
       
-      // Verify it matches WALLET env var
-      if (platformWallet.publicKey.toBase58() !== process.env.WALLET) {
-        throw new Error('Platform wallet key mismatch');
-      }
-      
-      console.log(`   📤 Sending from platform wallet: ${process.env.WALLET.slice(0, 8)}...`);
+      console.log(`   📤 Sending from platform wallet: ${platformWallet.publicKey.toBase58().slice(0, 8)}...`);
       
       // Validate recipient address
       const recipientPubkey = new PublicKey(walletAddress);
